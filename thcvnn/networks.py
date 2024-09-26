@@ -76,7 +76,7 @@ class ComplexUNet(nn.Module):
         self.dec2 = self.upconv_block(256, 128)
         self.dec1 = self.upconv_block(128, 64)
 
-        self.final_conv = ComplexConv2d(64, out_channels, kernel_size=1)
+        self.final_conv = layers.ComplexConv2d(64, out_channels, kernel_size=1)
 
     def conv_block(self, in_channels, out_channels):
         return nn.Sequential(
