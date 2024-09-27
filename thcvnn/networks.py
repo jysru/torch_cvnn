@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
+import lightning as L
+import pytorch_lightning as pl
 
 import thcvnn.layers as layers
+import thcvnn.losses as losses
 import thcvnn.activations as activations
 
 
@@ -20,41 +23,108 @@ class ComplexMLP(nn.Module):
         self.layers = nn.ModuleList()
         
         # Input layer
-        self.layers.append(nn.Linear(input_size, hidden_sizes[0], dtype=torch.complex64))
+        self.layers.append(layers.ComplexLinear(input_size, hidden_sizes[0], bias=True))
         
         # Hidden layers
         for i in range(len(hidden_sizes) - 1):
-            self.layers.append(nn.Linear(hidden_sizes[i], hidden_sizes[i+1], dtype=torch.complex64))
+            self.layers.append(layers.ComplexLinear(hidden_sizes[i], hidden_sizes[i+1], bias=True))
         
         # Output layer
-        self.layers.append(nn.Linear(hidden_sizes[-1], output_size, dtype=torch.complex64))
+        self.layers.append(layers.ComplexLinear(hidden_sizes[-1], output_size, bias=True))
         
     def forward(self, x):
         for i, layer in enumerate(self.layers[:-1]):
             x = layer(x)
-            x = self.apply_activation(x, self.hidden_activations[i])
+            if type(self.hidden_activations) == list:
+                x = self.hidden_activations[i](x)
+            else:
+                x = self.hidden_activations(x)
         
         x = self.layers[-1](x)
         if self.output_activation:
-            x = self.apply_activation(x, self.output_activation)
+            x = self.output_activation(x, self.output_activation)
         
         return x
     
-    def apply_activation(self, x, activation):
-        if activation == 'relu':
-            return torch.relu(x.real) + 1j * torch.relu(x.imag)
-        elif activation == 'leaky_relu':
-            return torch.leaky_relu(x.real) + 1j * torch.leaky_relu(x.imag)
-        elif activation == 'tanh':
-            return torch.tanh(x.real) + 1j * torch.tanh(x.imag)
-        elif activation == 'sigmoid':
-            return torch.sigmoid(x.real) + 1j * torch.sigmoid(x.imag)
-        elif activation == 'mod_relu':
-            return torch.relu(torch.abs(x)) * torch.exp(1j * torch.angle(x))
-        elif activation is None:
-            return x
-        else:
-            raise ValueError(f"Unsupported activation function: {activation}")
+
+
+class LitComplexMLP(L.LightningModule):
+
+    def __init__(
+            self,
+            input_size: int,
+            hidden_sizes: list[int],
+            output_size: int,
+            hidden_activations: list,
+            output_activation = None,
+            train_loss_fn = losses.ComplexMSELoss(),
+            add_dropout: bool = False,
+            ):
+        super().__init__()
+        
+        # Define the layers of the MLP
+        layers = []
+        previous_size = input_size
+
+        # Add hidden layers
+        for hidden_size in hidden_sizes:
+            layers.append(nn.Linear(previous_size, hidden_size))
+            layers.append(nn.LeakyReLU())  # Activation function (ReLU)
+            if add_dropout:
+                layers.append(nn.Dropout(0.2))
+            previous_size = hidden_size
+
+        # Add output layer
+        layers.append(nn.Linear(previous_size, output_size))
+        if last_activation_layer is not None:
+            layers.append(last_activation_layer)
+        
+        # Create sequential model
+        self.model = nn.Sequential(*layers)
+        
+        # Define loss function
+        self.loss_fn = train_loss_fn
+
+
+    def forward(self, x):
+        return self.model(x)
+
+    def training_step(self, batch):
+        x, y = batch
+        y_hat = self(x)
+        loss = self.loss_fn(y_hat, y)
+        self.log('train_loss', loss, prog_bar=True, on_step=False, on_epoch=True)
+        return loss
+    
+    def validation_step(self, batch):
+        x, y = batch
+        y_hat = self(x)
+        loss = self.loss_fn(y_hat, y)
+        self.log('val_loss', loss, prog_bar=True, on_step=False, on_epoch=True)
+        return loss
+
+    def configure_optimizers(self):
+        # optimizer = optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = optim.RMSprop(self.parameters(), lr=1e-3)
+        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            factor=0.5,
+            patience=10,
+            cooldown=3,
+            threshold=1e-2,
+            min_lr=1e-7,
+            )
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "monitor": "val_loss",
+            }
+        }
+
+    
+
         
 
 class ComplexUNet(nn.Module):

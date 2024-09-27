@@ -22,8 +22,8 @@ class ComplexLinear(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.weight_real, a=torch.sqrt(5))
-        nn.init.kaiming_uniform_(self.weight_imag, a=torch.sqrt(5))
+        nn.init.kaiming_uniform_(self.weight_real, a=torch.sqrt(torch.tensor(5)))
+        nn.init.kaiming_uniform_(self.weight_imag, a=torch.sqrt(torch.tensor(5)))
         if self.bias_real is not None:
             fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.weight_real)
             bound = 1 / torch.sqrt(fan_in)

@@ -44,7 +44,7 @@ class ComplexModLeakyReLU(nn.Module):
         super(ComplexModLeakyReLU, self).__init__()
         self.in_features = in_features
         self.negative_slope = negative_slope
-        self.threshold = nn.Parameter(torch.Tensor(in_features))
+        self.threshold = nn.Parameter(torch.Tensor(init_threshold))
         self.threshold.data.fill_(init_threshold)
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
